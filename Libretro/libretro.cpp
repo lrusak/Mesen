@@ -56,6 +56,27 @@ static std::shared_ptr<Console> _console;
 static std::unique_ptr<LibretroKeyManager> _keyManager;
 static std::unique_ptr<LibretroMessageManager> _messageManager;
 
+static Console& GetConsole()
+{
+	if (!_console)
+	{
+		_console = std::make_shared<Console>();
+		_console->Init(env_cb);
+
+		_keyManager.reset(new LibretroKeyManager(_console));
+	}
+
+	return *_console;
+}
+
+static LibretroKeyManager& GetKeyManager()
+{
+	if (!_keyManager)
+		throw std::runtime_error("keymanager not initialized!");
+
+	return *_keyManager;
+}
+
 static constexpr const char* MesenNtscFilter = "mesen_ntsc_filter";
 static constexpr const char* MesenPalette = "mesen_palette";
 static constexpr const char* MesenNoSpriteLimit = "mesen_nospritelimit";
@@ -113,32 +134,28 @@ extern "C" {
 		else
 			logCallback = nullptr;
 
-		_console.reset(new Console());
-		_console->Init(env_cb);
-
-		_keyManager.reset(new LibretroKeyManager(_console));
 		_messageManager.reset(new LibretroMessageManager(logCallback, env_cb));
 
 		std::stringstream databaseData;
 		databaseData.write((const char*)MesenDatabase, sizeof(MesenDatabase));
 		GameDatabase::LoadGameDb(databaseData);
 
-		_console->GetSettings()->SetFlags(EmulationFlags::FdsAutoLoadDisk);
-		_console->GetSettings()->SetFlags(EmulationFlags::AutoConfigureInput);
-		_console->GetSettings()->SetSampleRate(_audioSampleRate);
+		GetConsole().GetSettings()->SetFlags(EmulationFlags::FdsAutoLoadDisk);
+		GetConsole().GetSettings()->SetFlags(EmulationFlags::AutoConfigureInput);
+		GetConsole().GetSettings()->SetSampleRate(_audioSampleRate);
 
 		if (env_cb(RETRO_ENVIRONMENT_GET_INPUT_BITMASKS, NULL))
-			_keyManager->SetSupportsInputBitmasks(true);
+			GetKeyManager().SetSupportsInputBitmasks(true);
 	}
 
 	RETRO_API void retro_deinit()
 	{
-		_keyManager->SetSupportsInputBitmasks(false);
+		GetKeyManager().SetSupportsInputBitmasks(false);
 		_keyManager.reset();
 		_messageManager.reset();
 
-		_console->SaveBatteries();
-		_console->Release(true);
+		GetConsole().SaveBatteries();
+		GetConsole().Release(true);
 		_console.reset();
 	}
 
@@ -209,7 +226,7 @@ extern "C" {
 			{ "Standard Controller", DEVICE_GAMEPAD },
 			{ NULL, 0 },
 		};
-		
+
 		static constexpr struct retro_controller_description pads5[] = {
 			{ "Auto",     RETRO_DEVICE_JOYPAD },
 			{ "Arkanoid", DEVICE_ARKANOID },
@@ -223,10 +240,10 @@ extern "C" {
 			{ "Konami Hypershot", DEVICE_KONAMIHYPERSHOT },
 			{ "Pachinko", DEVICE_PACHINKO },
 			{ "Partytap", DEVICE_PARTYTAP },
-			{ "Oeka Kids Tablet", DEVICE_OEKAKIDS },			
+			{ "Oeka Kids Tablet", DEVICE_OEKAKIDS },
 			{ NULL, 0 },
 		};
-		
+
 		static constexpr struct retro_controller_info ports[] = {
 			{ pads1, 7 },
 			{ pads2, 7 },
@@ -252,7 +269,7 @@ extern "C" {
 
 	RETRO_API void retro_set_video_refresh(retro_video_refresh_t sendFrame)
 	{
-		_console->GetVideoRenderer()->SetVideoCallback(sendFrame);
+		GetConsole().GetVideoRenderer()->SetVideoCallback(sendFrame);
 	}
 
 	RETRO_API void retro_set_audio_sample(retro_audio_sample_t sendAudioSample)
@@ -261,22 +278,22 @@ extern "C" {
 
 	RETRO_API void retro_set_audio_sample_batch(retro_audio_sample_batch_t audioSampleBatch)
 	{
-		_console->GetSoundMixer()->SetSendAudioSample(audioSampleBatch);
+		GetConsole().GetSoundMixer()->SetSendAudioSample(audioSampleBatch);
 	}
 
 	RETRO_API void retro_set_input_poll(retro_input_poll_t pollInput)
-	{	
-		_keyManager->SetPollInput(pollInput);
+	{
+		GetKeyManager().SetPollInput(pollInput);
 	}
 
 	RETRO_API void retro_set_input_state(retro_input_state_t getInputState)
 	{
-		_keyManager->SetGetInputState(getInputState);
+		GetKeyManager().SetGetInputState(getInputState);
 	}
 
 	RETRO_API void retro_reset()
 	{
-		_console->Reset(true);
+		GetConsole().Reset(true);
 	}
 
 	bool readVariable(const char* key, retro_variable &var)
@@ -312,9 +329,9 @@ extern "C" {
 		if(readVariable(flagName, var)) {
 			string value = string(var.value);
 			if(value == "disabled") {
-				_console->GetSettings()->ClearFlags(flagValue);
+				GetConsole().GetSettings()->ClearFlags(flagValue);
 			} else {
-				_console->GetSettings()->SetFlags(flagValue);
+				GetConsole().GetSettings()->SetFlags(flagValue);
 			}
 		}
 	}
@@ -322,7 +339,7 @@ extern "C" {
 	void load_custom_palette()
 	{
 		//Setup default palette in case we can't load the custom one
-		_console->GetSettings()->SetUserRgbPalette(defaultPalette);
+		GetConsole().GetSettings()->SetUserRgbPalette(defaultPalette);
 
 		//Try to load the custom palette from the MesenPalette.pal file
 		string palettePath = FolderUtilities::CombinePath(FolderUtilities::GetHomeFolder(), "MesenPalette.pal");
@@ -338,7 +355,7 @@ extern "C" {
 				for(int i = 0; i < fileSize / 3; i++) {
 					customPalette[i] = 0xFF000000 | fileData[i * 3 + 2] | (fileData[i * 3 + 1] << 8) | (fileData[i * 3] << 16);
 				}
-				_console->GetSettings()->SetUserRgbPalette(customPalette, (uint32_t)fileSize / 3);
+				GetConsole().GetSettings()->SetUserRgbPalette(customPalette, (uint32_t)fileSize / 3);
 			}
 		}
 	}
@@ -346,9 +363,9 @@ extern "C" {
 	void update_settings()
 	{
 		struct retro_variable var = { };
-		_console->GetSettings()->SetPictureSettings(0, 0, 0, 0, 0);
+		GetConsole().GetSettings()->SetPictureSettings(0, 0, 0, 0, 0);
 
-		_hdPacksEnabled = _console->GetSettings()->CheckFlag(EmulationFlags::UseHdPacks);
+		_hdPacksEnabled = GetConsole().GetSettings()->CheckFlag(EmulationFlags::UseHdPacks);
 
 		set_flag(MesenNoSpriteLimit, EmulationFlags::RemoveSpriteLimit | EmulationFlags::AdaptiveSpriteLimit);
 		set_flag(MesenHdPacks, EmulationFlags::UseHdPacks);
@@ -365,69 +382,69 @@ extern "C" {
 			if(value == "enabled") {
 				settings.Filter = StereoFilter::Delay;
 				settings.Delay = 15;
-				_console->GetSettings()->SetAudioFilterSettings(settings);
+				GetConsole().GetSettings()->SetAudioFilterSettings(settings);
 			} else {
-				_console->GetSettings()->SetAudioFilterSettings(settings);
+				GetConsole().GetSettings()->SetAudioFilterSettings(settings);
 			}
 		}
-		
+
 		if(readVariable(MesenNtscFilter, var)) {
 			string value = string(var.value);
 			if(value == "Disabled") {
-				_console->GetSettings()->SetVideoFilterType(VideoFilterType::None);
+				GetConsole().GetSettings()->SetVideoFilterType(VideoFilterType::None);
 			} else if(value == "Composite (Blargg)") {
-				_console->GetSettings()->SetVideoFilterType(VideoFilterType::NTSC);
-				_console->GetSettings()->SetNtscFilterSettings(0, 0, 0, 0, 0, 0, false, 0, 0, 0, false, true);
+				GetConsole().GetSettings()->SetVideoFilterType(VideoFilterType::NTSC);
+				GetConsole().GetSettings()->SetNtscFilterSettings(0, 0, 0, 0, 0, 0, false, 0, 0, 0, false, true);
 			} else if(value == "S-Video (Blargg)") {
-				_console->GetSettings()->SetVideoFilterType(VideoFilterType::NTSC);
-				_console->GetSettings()->SetNtscFilterSettings(-1.0, 0, -1.0, 0, 0.2, 0.2, false, 0, 0, 0, false, true);
+				GetConsole().GetSettings()->SetVideoFilterType(VideoFilterType::NTSC);
+				GetConsole().GetSettings()->SetNtscFilterSettings(-1.0, 0, -1.0, 0, 0.2, 0.2, false, 0, 0, 0, false, true);
 			} else if(value == "RGB (Blargg)") {
-				_console->GetSettings()->SetVideoFilterType(VideoFilterType::NTSC);
-				_console->GetSettings()->SetPictureSettings(0, 0, 0, 0, 0);
-				_console->GetSettings()->SetNtscFilterSettings(-1.0, -1.0, -1.0, 0, 0.7, 0.2, false, 0, 0, 0, false, true);
+				GetConsole().GetSettings()->SetVideoFilterType(VideoFilterType::NTSC);
+				GetConsole().GetSettings()->SetPictureSettings(0, 0, 0, 0, 0);
+				GetConsole().GetSettings()->SetNtscFilterSettings(-1.0, -1.0, -1.0, 0, 0.7, 0.2, false, 0, 0, 0, false, true);
 			} else if(value == "Monochrome (Blargg)") {
-				_console->GetSettings()->SetVideoFilterType(VideoFilterType::NTSC);
-				_console->GetSettings()->SetPictureSettings(0, 0, -1.0, 0, 0);
-				_console->GetSettings()->SetNtscFilterSettings(-0.2, -0.1, -0.2, 0, 0.7, 0.2, false, 0, 0, 0, false, true);
+				GetConsole().GetSettings()->SetVideoFilterType(VideoFilterType::NTSC);
+				GetConsole().GetSettings()->SetPictureSettings(0, 0, -1.0, 0, 0);
+				GetConsole().GetSettings()->SetNtscFilterSettings(-0.2, -0.1, -0.2, 0, 0.7, 0.2, false, 0, 0, 0, false, true);
 			} else if(value == "Bisqwit 2x") {
-				_console->GetSettings()->SetVideoFilterType(VideoFilterType::BisqwitNtscQuarterRes);
-				_console->GetSettings()->SetNtscFilterSettings(0, 0, 0, 0, 0, 0, false, 0, 0, 0, false, true);
+				GetConsole().GetSettings()->SetVideoFilterType(VideoFilterType::BisqwitNtscQuarterRes);
+				GetConsole().GetSettings()->SetNtscFilterSettings(0, 0, 0, 0, 0, 0, false, 0, 0, 0, false, true);
 			} else if(value == "Bisqwit 4x") {
-				_console->GetSettings()->SetVideoFilterType(VideoFilterType::BisqwitNtscHalfRes);
-				_console->GetSettings()->SetNtscFilterSettings(0, 0, 0, 0, 0, 0, false, 0, 0, 0, false, true);
+				GetConsole().GetSettings()->SetVideoFilterType(VideoFilterType::BisqwitNtscHalfRes);
+				GetConsole().GetSettings()->SetNtscFilterSettings(0, 0, 0, 0, 0, 0, false, 0, 0, 0, false, true);
 			} else if(value == "Bisqwit 8x") {
-				_console->GetSettings()->SetVideoFilterType(VideoFilterType::BisqwitNtsc);
-				_console->GetSettings()->SetNtscFilterSettings(0, 0, 0, 0, 0, 0, false, 0, 0, 0, false, true);
+				GetConsole().GetSettings()->SetVideoFilterType(VideoFilterType::BisqwitNtsc);
+				GetConsole().GetSettings()->SetNtscFilterSettings(0, 0, 0, 0, 0, 0, false, 0, 0, 0, false, true);
 			}
 		}
 
 		if(readVariable(MesenPalette, var)) {
 			string value = string(var.value);
 			if(value == "Default") {
-				_console->GetSettings()->SetUserRgbPalette(defaultPalette);
+				GetConsole().GetSettings()->SetUserRgbPalette(defaultPalette);
 			} else if(value == "Composite Direct (by FirebrandX)") {
-				_console->GetSettings()->SetUserRgbPalette(compositeDirectPalette);
+				GetConsole().GetSettings()->SetUserRgbPalette(compositeDirectPalette);
 			} else if(value == "Nes Classic") {
-				_console->GetSettings()->SetUserRgbPalette(nesClassicPalette);
+				GetConsole().GetSettings()->SetUserRgbPalette(nesClassicPalette);
 			} else if(value == "Nestopia (RGB)") {
-				_console->GetSettings()->SetUserRgbPalette(nestopiaRgbPalette);
+				GetConsole().GetSettings()->SetUserRgbPalette(nestopiaRgbPalette);
 			} else if(value == "Original Hardware (by FirebrandX)") {
-				_console->GetSettings()->SetUserRgbPalette(originalHardwarePalette);
+				GetConsole().GetSettings()->SetUserRgbPalette(originalHardwarePalette);
 			} else if(value == "PVM Style (by FirebrandX)") {
-				_console->GetSettings()->SetUserRgbPalette(pvmStylePalette);
+				GetConsole().GetSettings()->SetUserRgbPalette(pvmStylePalette);
 			} else if(value == "Sony CXA2025AS") {
-				_console->GetSettings()->SetUserRgbPalette(sonyCxa2025AsPalette);
+				GetConsole().GetSettings()->SetUserRgbPalette(sonyCxa2025AsPalette);
 			} else if(value == "Unsaturated v6 (by FirebrandX)") {
-				_console->GetSettings()->SetUserRgbPalette(unsaturatedPalette);
+				GetConsole().GetSettings()->SetUserRgbPalette(unsaturatedPalette);
 			} else if(value == "YUV v3 (by FirebrandX)") {
-				_console->GetSettings()->SetUserRgbPalette(yuvPalette);
+				GetConsole().GetSettings()->SetUserRgbPalette(yuvPalette);
 			} else if(value == "Wavebeam (by nakedarthur)") {
-				_console->GetSettings()->SetUserRgbPalette(wavebeamPalette);
+				GetConsole().GetSettings()->SetUserRgbPalette(wavebeamPalette);
 			} else if(value == "Custom") {
 				load_custom_palette();
 			} else if(value == "Raw") {
 				//Using the raw palette replaces the NTSC filters, if one is selected
-				_console->GetSettings()->SetVideoFilterType(VideoFilterType::Raw);
+				GetConsole().GetSettings()->SetVideoFilterType(VideoFilterType::Raw);
 			}
 		}
 
@@ -455,13 +472,13 @@ extern "C" {
 			}
 
 			if(beforeNmi) {
-				_console->GetSettings()->SetPpuNmiConfig(lineCount, 0);
+				GetConsole().GetSettings()->SetPpuNmiConfig(lineCount, 0);
 			} else {
-				_console->GetSettings()->SetPpuNmiConfig(0, lineCount);
+				GetConsole().GetSettings()->SetPpuNmiConfig(0, lineCount);
 			}
 		}
 
-		_console->GetSettings()->SetOverscanDimensions(
+		GetConsole().GetSettings()->SetOverscanDimensions(
 			readOverscanValue(MesenOverscanLeft),
 			readOverscanValue(MesenOverscanRight),
 			readOverscanValue(MesenOverscanTop),
@@ -471,58 +488,58 @@ extern "C" {
 		if(readVariable(MesenAspectRatio, var)) {
 			string value = string(var.value);
 			if(value == "Auto") {
-				_console->GetSettings()->SetVideoAspectRatio(VideoAspectRatio::Auto, 1.0);
+				GetConsole().GetSettings()->SetVideoAspectRatio(VideoAspectRatio::Auto, 1.0);
 			} else if(value == "No Stretching") {
-				_console->GetSettings()->SetVideoAspectRatio(VideoAspectRatio::NoStretching, 1.0);
+				GetConsole().GetSettings()->SetVideoAspectRatio(VideoAspectRatio::NoStretching, 1.0);
 			} else if(value == "NTSC") {
-				_console->GetSettings()->SetVideoAspectRatio(VideoAspectRatio::NTSC, 1.0);
+				GetConsole().GetSettings()->SetVideoAspectRatio(VideoAspectRatio::NTSC, 1.0);
 			} else if(value == "PAL") {
-				_console->GetSettings()->SetVideoAspectRatio(VideoAspectRatio::PAL, 1.0);
+				GetConsole().GetSettings()->SetVideoAspectRatio(VideoAspectRatio::PAL, 1.0);
 			} else if(value == "4:3") {
-				_console->GetSettings()->SetVideoAspectRatio(VideoAspectRatio::StandardS, 1.0);
+				GetConsole().GetSettings()->SetVideoAspectRatio(VideoAspectRatio::StandardS, 1.0);
 			} else if(value == "4:3 (Preserved)") {
-				_console->GetSettings()->SetVideoAspectRatio(VideoAspectRatio::Standard, 1.0);
+				GetConsole().GetSettings()->SetVideoAspectRatio(VideoAspectRatio::Standard, 1.0);
 			} else if(value == "16:9") {
-				_console->GetSettings()->SetVideoAspectRatio(VideoAspectRatio::WidescreenS, 1.0);
+				GetConsole().GetSettings()->SetVideoAspectRatio(VideoAspectRatio::WidescreenS, 1.0);
 			} else if(value == "16:9 (Preserved)") {
-				_console->GetSettings()->SetVideoAspectRatio(VideoAspectRatio::Widescreen, 1.0);
+				GetConsole().GetSettings()->SetVideoAspectRatio(VideoAspectRatio::Widescreen, 1.0);
 			}
 		}
 
 		if(readVariable(MesenRegion, var)) {
 			string value = string(var.value);
 			if(value == "Auto") {
-				_console->GetSettings()->SetNesModel(NesModel::Auto);
+				GetConsole().GetSettings()->SetNesModel(NesModel::Auto);
 			} else if(value == "NTSC") {
-				_console->GetSettings()->SetNesModel(NesModel::NTSC);
+				GetConsole().GetSettings()->SetNesModel(NesModel::NTSC);
 			} else if(value == "PAL") {
-				_console->GetSettings()->SetNesModel(NesModel::PAL);
+				GetConsole().GetSettings()->SetNesModel(NesModel::PAL);
 			} else if(value == "Dendy") {
-				_console->GetSettings()->SetNesModel(NesModel::Dendy);
+				GetConsole().GetSettings()->SetNesModel(NesModel::Dendy);
 			}
 		}
-		
+
 		if(readVariable(MesenRamState, var)) {
 			string value = string(var.value);
 			if(value == "All 0s (Default)") {
-				_console->GetSettings()->SetRamPowerOnState(RamPowerOnState::AllZeros);
+				GetConsole().GetSettings()->SetRamPowerOnState(RamPowerOnState::AllZeros);
 			} else if(value == "All 1s") {
-				_console->GetSettings()->SetRamPowerOnState(RamPowerOnState::AllOnes);
+				GetConsole().GetSettings()->SetRamPowerOnState(RamPowerOnState::AllOnes);
 			} else if(value == "Random Values") {
-				_console->GetSettings()->SetRamPowerOnState(RamPowerOnState::Random);
+				GetConsole().GetSettings()->SetRamPowerOnState(RamPowerOnState::Random);
 			}
 		}
 
 		if(readVariable(MesenScreenRotation, var)) {
 			string value = string(var.value);
 			if(value == "None") {
-				_console->GetSettings()->SetScreenRotation(0);
+				GetConsole().GetSettings()->SetScreenRotation(0);
 			} else if(value == u8"90 degrees") {
-				_console->GetSettings()->SetScreenRotation(90);
+				GetConsole().GetSettings()->SetScreenRotation(90);
 			} else if(value == u8"180 degrees") {
-				_console->GetSettings()->SetScreenRotation(180);
+				GetConsole().GetSettings()->SetScreenRotation(180);
 			} else if(value == u8"270 degrees") {
-				_console->GetSettings()->SetScreenRotation(270);
+				GetConsole().GetSettings()->SetScreenRotation(270);
 			}
 		}
 
@@ -558,7 +575,7 @@ extern "C" {
 			_audioSampleRate = (_audioSampleRate > 96000) ? 96000 : _audioSampleRate;
 
 			if(old_value != _audioSampleRate) {
-				_console->GetSettings()->SetSampleRate(_audioSampleRate);
+				GetConsole().GetSettings()->SetSampleRate(_audioSampleRate);
 
 				// switch when core actively running
 				if(_saveStateSize != -1) {
@@ -576,7 +593,7 @@ extern "C" {
 		auto getKeyBindings = [=](int port) {
 			KeyMappingSet keyMappings;
 			keyMappings.TurboSpeed = turboSpeed;
-			if(_console->GetSettings()->GetControllerType(port) == ControllerType::SnesController) {
+			if(GetConsole().GetSettings()->GetControllerType(port) == ControllerType::SnesController) {
 				keyMappings.Mapping1.LButton = getKeyCode(port, RETRO_DEVICE_ID_JOYPAD_L);
 				keyMappings.Mapping1.RButton = getKeyCode(port, RETRO_DEVICE_ID_JOYPAD_R);
 				keyMappings.Mapping1.A = getKeyCode(port, RETRO_DEVICE_ID_JOYPAD_A);
@@ -609,7 +626,7 @@ extern "C" {
 				keyMappings.Mapping1.PartyTapButtons[5] = getKeyCode(4, RETRO_DEVICE_ID_JOYPAD_R);
 
 				unsigned powerPadPort = 0;
-				if(_console->GetSettings()->GetExpansionDevice() == ExpansionPortDevice::FamilyTrainerMat) {
+				if(GetConsole().GetSettings()->GetExpansionDevice() == ExpansionPortDevice::FamilyTrainerMat) {
 					powerPadPort = 4;
 				}
 
@@ -655,52 +672,52 @@ extern "C" {
 			return keyMappings;
 		};
 
-		_console->GetSettings()->SetControllerKeys(0, getKeyBindings(0));
-		_console->GetSettings()->SetControllerKeys(1, getKeyBindings(1));
-		_console->GetSettings()->SetControllerKeys(2, getKeyBindings(2));
-		_console->GetSettings()->SetControllerKeys(3, getKeyBindings(3));
+		GetConsole().GetSettings()->SetControllerKeys(0, getKeyBindings(0));
+		GetConsole().GetSettings()->SetControllerKeys(1, getKeyBindings(1));
+		GetConsole().GetSettings()->SetControllerKeys(2, getKeyBindings(2));
+		GetConsole().GetSettings()->SetControllerKeys(3, getKeyBindings(3));
 
 		retro_system_av_info avInfo = {};
-		_console->GetVideoRenderer()->GetSystemAudioVideoInfo(avInfo);
+		GetConsole().GetVideoRenderer()->GetSystemAudioVideoInfo(avInfo);
 		env_cb(RETRO_ENVIRONMENT_SET_GEOMETRY, &avInfo);
 	}
 
 	RETRO_API void retro_run()
 	{
-		if(_console->GetSettings()->CheckFlag(EmulationFlags::ForceMaxSpeed)) {
+		if(GetConsole().GetSettings()->CheckFlag(EmulationFlags::ForceMaxSpeed)) {
 			//Skip frames to speed up emulation while still outputting at 50/60 fps (needed for FDS fast forward while loading)
-			_console->GetVideoRenderer()->SetSkipMode(true);
-			_console->GetSoundMixer()->SetSkipMode(true);
+			GetConsole().GetVideoRenderer()->SetSkipMode(true);
+			GetConsole().GetSoundMixer()->SetSkipMode(true);
 			for(int i = 0; i < 9; i++) {
 				//Attempt to speed up to 1000% speed
-				_console->RunSingleFrame();
+				GetConsole().RunSingleFrame();
 			}
-			_console->GetVideoRenderer()->SetSkipMode(false);
-			_console->GetSoundMixer()->SetSkipMode(false);
+			GetConsole().GetVideoRenderer()->SetSkipMode(false);
+			GetConsole().GetSoundMixer()->SetSkipMode(false);
 		}
 
 		bool updated = false;
 		if(env_cb(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &updated) && updated) {
 			update_settings();
 
-			bool hdPacksEnabled = _console->GetSettings()->CheckFlag(EmulationFlags::UseHdPacks);
+			bool hdPacksEnabled = GetConsole().GetSettings()->CheckFlag(EmulationFlags::UseHdPacks);
 			if(hdPacksEnabled != _hdPacksEnabled) {
 				//Try to load/unload HD pack when the flag is toggled
-				_console->UpdateHdPackMode();
+				GetConsole().UpdateHdPackMode();
 				_hdPacksEnabled = hdPacksEnabled;
 			}
 		}
 
-		_console->RunSingleFrame();
+		GetConsole().RunSingleFrame();
 
 		if(updated) {
 			//Update geometry after running the frame, in case the console's region changed (affects "auto" aspect ratio)
 			retro_system_av_info avInfo = {};
-			_console->GetVideoRenderer()->GetSystemAudioVideoInfo(avInfo);
+			GetConsole().GetVideoRenderer()->GetSystemAudioVideoInfo(avInfo);
 			env_cb(RETRO_ENVIRONMENT_SET_GEOMETRY, &avInfo);
 		}
 
-		_console->GetSoundMixer()->UploadAudioSamples();
+		GetConsole().GetSoundMixer()->UploadAudioSamples();
 	}
 
 	RETRO_API size_t retro_serialize_size()
@@ -711,8 +728,8 @@ extern "C" {
 	RETRO_API bool retro_serialize(void *data, size_t size)
 	{
 		std::stringstream ss;
-		_console->GetSaveStateManager()->SaveState(ss);
-		
+		GetConsole().GetSaveStateManager()->SaveState(ss);
+
 		string saveStateData = ss.str();
 		memset(data, 0, size);
 		memcpy(data, saveStateData.c_str(), std::min(size, saveStateData.size()));
@@ -725,15 +742,15 @@ extern "C" {
 		std::stringstream ss;
 		ss.write((char*)data, size);
 
-		bool result = _console->GetSaveStateManager()->LoadState(ss, false);
+		bool result = GetConsole().GetSaveStateManager()->LoadState(ss, false);
 		if(result)
-			_console->GetSettings()->SetSampleRate(_audioSampleRate);
+			GetConsole().GetSettings()->SetSampleRate(_audioSampleRate);
 		return result;
 	}
 
 	RETRO_API void retro_cheat_reset()
 	{
-		_console->GetCheatManager()->ClearCodes();
+		GetConsole().GetCheatManager()->ClearCodes();
 	}
 
 	RETRO_API void retro_cheat_set(unsigned index, bool enabled, const char *codeStr)
@@ -749,7 +766,7 @@ extern "C" {
 			for(;;) {
 				string address = code.substr((0 + chl), 4);
 				string value = code.substr((5 + chl), 2);
-				_console->GetCheatManager()->AddCustomCode(HexUtilities::FromHex(address), HexUtilities::FromHex(value));
+				GetConsole().GetCheatManager()->AddCustomCode(HexUtilities::FromHex(address), HexUtilities::FromHex(value));
 				if(code[(7 + chl)] != '+') {
 					return;
 				}
@@ -762,7 +779,7 @@ extern "C" {
 				string address = code.substr((0 + chl), 4);
 				string comparison = code.substr((5 + chl), 2);
 				string value = code.substr((8 + chl), 2);
-				_console->GetCheatManager()->AddCustomCode(HexUtilities::FromHex(address), HexUtilities::FromHex(value), HexUtilities::FromHex(comparison));
+				GetConsole().GetCheatManager()->AddCustomCode(HexUtilities::FromHex(address), HexUtilities::FromHex(value), HexUtilities::FromHex(comparison));
 				if(code[(10 + chl)] != '+') {
 					return;
 				}
@@ -789,7 +806,7 @@ extern "C" {
 			if(isValidGgCode && code[6] == '+') {
 				for(;;) {
 					string code1 = code.substr((0 + chl), 6);
-					_console->GetCheatManager()->AddGameGenieCode(code1);;
+					GetConsole().GetCheatManager()->AddGameGenieCode(code1);;
 					if(code[(6 + chl)] != '+') {
 						return;
 					}
@@ -799,7 +816,7 @@ extern "C" {
 			else if(isValidGgCode && code[8] == '+') {
 				for(;;) {
 					string code1 = code.substr((0 + chl), 8);
-					_console->GetCheatManager()->AddGameGenieCode(code1);;
+					GetConsole().GetCheatManager()->AddGameGenieCode(code1);;
 					if(code[(8 + chl)] != '+') {
 						return;
 					}
@@ -807,13 +824,13 @@ extern "C" {
 				}
 			}
 			else if(isValidGgCode) {
-				_console->GetCheatManager()->AddGameGenieCode(code);;
+				GetConsole().GetCheatManager()->AddGameGenieCode(code);;
 			}
 
 			else if(isValidParCode && code[8] == '+') {
 				for(;;) {
 					string code1 = code.substr((0 + chl), 8);
-					_console->GetCheatManager()->AddProActionRockyCode(HexUtilities::FromHex(code1));
+					GetConsole().GetCheatManager()->AddProActionRockyCode(HexUtilities::FromHex(code1));
 					if(code[(8 + chl)] != '+') {
 						return;
 					}
@@ -821,7 +838,7 @@ extern "C" {
 				}
 			}
 			else if(isValidParCode) {
-				_console->GetCheatManager()->AddProActionRockyCode(HexUtilities::FromHex(code));
+				GetConsole().GetCheatManager()->AddProActionRockyCode(HexUtilities::FromHex(code));
 			}
 
 		}
@@ -841,7 +858,7 @@ extern "C" {
 			unsigned device = _inputDevices[port];
 			if(device == DEVICE_AUTO) {
 				if(port <= 3) {
-					switch(_console->GetSettings()->GetControllerType(port)) {
+					switch(GetConsole().GetSettings()->GetControllerType(port)) {
 						case ControllerType::StandardController: device = DEVICE_GAMEPAD; break;
 						case ControllerType::PowerPad: device = DEVICE_POWERPAD; break;
 						case ControllerType::SnesController: device = DEVICE_SNESGAMEPAD; break;
@@ -852,7 +869,7 @@ extern "C" {
 						default: return;
 					}
 				} else if(port == 4) {
-					switch(_console->GetSettings()->GetExpansionDevice()) {
+					switch(GetConsole().GetSettings()->GetExpansionDevice()) {
 						case ExpansionPortDevice::ArkanoidController: device = DEVICE_ARKANOID; break;
 						case ExpansionPortDevice::BandaiHyperShot: device = DEVICE_BANDAIHYPERSHOT; break;
 						case ExpansionPortDevice::ExcitingBoxing: device = DEVICE_EXCITINGBOXING; break;
@@ -971,11 +988,11 @@ extern "C" {
 	void update_core_controllers()
 	{
 		//Setup all "auto" ports
-		RomInfo romInfo = _console->GetRomInfo();
+		RomInfo romInfo = GetConsole().GetRomInfo();
 		if(romInfo.IsInDatabase || romInfo.IsNes20Header) {
-			_console->GetSettings()->InitializeInputDevices(romInfo.InputType, romInfo.System, true);
+			GetConsole().GetSettings()->InitializeInputDevices(romInfo.InputType, romInfo.System, true);
 		} else {
-			_console->GetSettings()->InitializeInputDevices(GameInputType::StandardControllers, GameSystem::NesNtsc, true);
+			GetConsole().GetSettings()->InitializeInputDevices(GameInputType::StandardControllers, GameSystem::NesNtsc, true);
 		}
 
 		for(int port = 0; port < 5; port++) {
@@ -992,7 +1009,7 @@ extern "C" {
 						case DEVICE_SNESMOUSE: type = ControllerType::SnesMouse; break;
 						case DEVICE_VBGAMEPAD: type = ControllerType::VbController; break;
 					}
-					_console->GetSettings()->SetControllerType(port, type);
+					GetConsole().GetSettings()->SetControllerType(port, type);
 				} else {
 					ExpansionPortDevice type = ExpansionPortDevice::None;
 					switch(_inputDevices[port]) {
@@ -1010,28 +1027,28 @@ extern "C" {
 						case DEVICE_BATTLEBOX: type = ExpansionPortDevice::BattleBox; break;
 						case DEVICE_FOURPLAYERADAPTER: type = ExpansionPortDevice::FourPlayerAdapter; break;
 					}
-					_console->GetSettings()->SetExpansionDevice(type);
+					GetConsole().GetSettings()->SetExpansionDevice(type);
 				}
 			}
 		}
 
 		bool hasFourScore = false;
-		bool isFamicom = (_console->GetSettings()->GetExpansionDevice() != ExpansionPortDevice::None || romInfo.System == GameSystem::Famicom || romInfo.System == GameSystem::FDS || romInfo.System == GameSystem::Dendy);
+		bool isFamicom = (GetConsole().GetSettings()->GetExpansionDevice() != ExpansionPortDevice::None || romInfo.System == GameSystem::Famicom || romInfo.System == GameSystem::FDS || romInfo.System == GameSystem::Dendy);
 		if(isFamicom) {
-			_console->GetSettings()->SetConsoleType(ConsoleType::Famicom);
-			if(_console->GetSettings()->GetExpansionDevice() == ExpansionPortDevice::FourPlayerAdapter) {
+			GetConsole().GetSettings()->SetConsoleType(ConsoleType::Famicom);
+			if(GetConsole().GetSettings()->GetExpansionDevice() == ExpansionPortDevice::FourPlayerAdapter) {
 				hasFourScore = true;
 			}
 		} else {
-			_console->GetSettings()->SetConsoleType(ConsoleType::Nes);
-			if(_console->GetSettings()->GetControllerType(2) != ControllerType::None || _console->GetSettings()->GetControllerType(3) != ControllerType::None) {
+			GetConsole().GetSettings()->SetConsoleType(ConsoleType::Nes);
+			if(GetConsole().GetSettings()->GetControllerType(2) != ControllerType::None || GetConsole().GetSettings()->GetControllerType(3) != ControllerType::None) {
 				hasFourScore = true;
 			}
 		}
 
-		_console->GetSettings()->SetFlagState(EmulationFlags::HasFourScore, hasFourScore);
+		GetConsole().GetSettings()->SetFlagState(EmulationFlags::HasFourScore, hasFourScore);
 	}
-	
+
 	void retro_set_memory_maps()
 	{
 		//Expose internal RAM and work/save RAM for retroachievements
@@ -1040,7 +1057,7 @@ extern "C" {
 
 		int count = 0;
 		for(int i = 0; i <= 0xFFFF; i += 0x100) {
-			uint8_t* ram = _console->GetRamBuffer(i);
+			uint8_t* ram = GetConsole().GetRamBuffer(i);
 			if(ram) {
 				descriptors[count].ptr = ram;
 				descriptors[count].start = i;
@@ -1091,11 +1108,11 @@ extern "C" {
 		update_settings();
 
 		//Plug in 2 standard controllers by default, game database will switch the controller types for recognized games
-		_console->GetSettings()->SetMasterVolume(10.0);
-		_console->GetSettings()->SetControllerType(0, ControllerType::StandardController);
-		_console->GetSettings()->SetControllerType(1, ControllerType::StandardController);
-		_console->GetSettings()->SetControllerType(2, ControllerType::None);
-		_console->GetSettings()->SetControllerType(3, ControllerType::None);
+		GetConsole().GetSettings()->SetMasterVolume(10.0);
+		GetConsole().GetSettings()->SetControllerType(0, ControllerType::StandardController);
+		GetConsole().GetSettings()->SetControllerType(1, ControllerType::StandardController);
+		GetConsole().GetSettings()->SetControllerType(2, ControllerType::None);
+		GetConsole().GetSettings()->SetControllerType(3, ControllerType::None);
 
 		// Attempt to fetch extended game info
 		const struct retro_game_info_ext *gameExt = NULL;
@@ -1134,14 +1151,14 @@ extern "C" {
 
 		// Load content
 		VirtualFile romData(gameData, gameSize, gamePath);
-		bool result = _console->Initialize(romData);
+		bool result = GetConsole().Initialize(romData);
 
 		if(result) {
 			//Set default dipswitches for some VS System games
-			switch(_console->GetRomInfo().Hash.PrgCrc32) {
-				case 0x8850924B: _console->GetSettings()->SetDipSwitches(32); break; //VS Tetris
-				case 0xE1AA8214: _console->GetSettings()->SetDipSwitches(32); break; //StarLuster
-				default: _console->GetSettings()->SetDipSwitches(0); break;
+			switch(GetConsole().GetRomInfo().Hash.PrgCrc32) {
+				case 0x8850924B: GetConsole().GetSettings()->SetDipSwitches(32); break; //VS Tetris
+				case 0xE1AA8214: GetConsole().GetSettings()->SetDipSwitches(32); break; //StarLuster
+				default: GetConsole().GetSettings()->SetDipSwitches(0); break;
 			}
 
 			update_core_controllers();
@@ -1151,7 +1168,7 @@ extern "C" {
 			//Retroarch doesn't like this for netplay or rewinding - it requires the states to always be the exact same size
 			//So we need to send a large enough size to Retroarch to ensure Mesen's state will always fit within that buffer.
 			std::stringstream ss;
-			_console->GetSaveStateManager()->SaveState(ss);
+			GetConsole().GetSaveStateManager()->SaveState(ss);
 
 			//Round up to the next 1kb multiple
 			_saveStateSize = ((ss.str().size() * 2) + 0x400) & ~0x3FF;
@@ -1172,7 +1189,7 @@ extern "C" {
 
 	RETRO_API unsigned retro_get_region()
 	{
-		NesModel model = _console->GetModel();
+		NesModel model = GetConsole().GetModel();
 		return model == NesModel::NTSC ? RETRO_REGION_NTSC : RETRO_REGION_PAL;
 	}
 
@@ -1193,39 +1210,39 @@ extern "C" {
 	{
 		uint32_t hscale = 1;
 		uint32_t vscale = 1;
-		switch(_console->GetSettings()->GetVideoFilterType()) {
+		switch(GetConsole().GetSettings()->GetVideoFilterType()) {
 			case VideoFilterType::NTSC: hscale = 2; break;
 			case VideoFilterType::BisqwitNtscQuarterRes: hscale = 2; break;
 			case VideoFilterType::BisqwitNtscHalfRes: hscale = 4; break;
 			case VideoFilterType::BisqwitNtsc: hscale = 8; break;
 			default: hscale = 1; break;
 		}
-		
-		shared_ptr<HdPackData> hdData = _console->GetHdData();
+
+		shared_ptr<HdPackData> hdData = GetConsole().GetHdData();
 		if(hdData) {
 			hscale = hdData->Scale;
 			vscale = hdData->Scale;
 		}
 
 		if(hscale <= 2)
-			_console->GetVideoRenderer()->GetSystemAudioVideoInfo(*info, NES_NTSC_OUT_WIDTH(256), 240 * vscale);
+			GetConsole().GetVideoRenderer()->GetSystemAudioVideoInfo(*info, NES_NTSC_OUT_WIDTH(256), 240 * vscale);
 		else
-			_console->GetVideoRenderer()->GetSystemAudioVideoInfo(*info, 256 * hscale, 240 * vscale);
+			GetConsole().GetVideoRenderer()->GetSystemAudioVideoInfo(*info, 256 * hscale, 240 * vscale);
 	}
 
 	RETRO_API void *retro_get_memory_data(unsigned id)
 	{
-		BaseMapper* mapper = _console->GetMapper();
+		BaseMapper* mapper = GetConsole().GetMapper();
 		switch(id) {
 			case RETRO_MEMORY_SAVE_RAM: return mapper->GetSaveRam();
-			case RETRO_MEMORY_SYSTEM_RAM: return _console->GetMemoryManager()->GetInternalRAM();
+			case RETRO_MEMORY_SYSTEM_RAM: return GetConsole().GetMemoryManager()->GetInternalRAM();
 		}
 		return nullptr;
 	}
 
 	RETRO_API size_t retro_get_memory_size(unsigned id)
 	{
-		BaseMapper* mapper = _console->GetMapper();
+		BaseMapper* mapper = GetConsole().GetMapper();
 		switch(id) {
 			case RETRO_MEMORY_SAVE_RAM: return mapper->GetMemorySize(DebugMemoryType::SaveRam);
 			case RETRO_MEMORY_SYSTEM_RAM: return MemoryManager::InternalRAMSize;
